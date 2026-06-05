@@ -5,48 +5,66 @@ from io import BytesIO
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+import io
 
-# --- NEW: ATS-FRIENDLY PDF GENERATION HELPER ---
-def convert_text_to_pdf(text_content):
-    """Converts pure text/markdown structure into an ATS-friendly, machine-readable PDF byte stream."""
-    pdf_buffer = BytesIO()
+def convert_text_to_pdf(text_content, template_style="Classic Professional (Elegant Serif)"):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
+    story = []
     
-    # Setup document geometry with safe 0.75-inch margins
-    doc = SimpleDocTemplate(
-        pdf_buffer, 
-        pagesize=letter,
-        rightMargin=54, leftMargin=54, 
-        topMargin=54, bottomMargin=54
-    )
-    
+    # Base configuration templates
     styles = getSampleStyleSheet()
     
-    # Custom ATS-optimized typography style (Using clear, standard Helvetica font)
-    ats_style = ParagraphStyle(
-        'ATS_Normal',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=10.5,
+    if "Modern Minimalist" in template_style:
+        body_font = "Helvetica"
+        header_font = "Helvetica-Bold"
+        primary_color = colors.HexColor("#2C3E50")
+    elif "Tech Executive" in template_style:
+        body_font = "Courier"
+        header_font = "Courier-Bold"
+        primary_color = colors.HexColor("#16A085")
+    else: # Classic Professional
+        body_font = "Times-Roman"
+        header_font = "Times-Bold"
+        primary_color = colors.HexColor("#000000")
+
+    # Creating customized dynamic styles based on selection
+    custom_body = ParagraphStyle(
+        'CustomBody',
+        fontName=body_font,
+        fontSize=10,
         leading=14,
-        spaceAfter=6
+        textColor=colors.HexColor("#333333")
     )
     
-    story = []
-    # Process text line by line, preserving clean formatting
+    custom_header = ParagraphStyle(
+        'CustomHeader',
+        fontName=header_font,
+        fontSize=14,
+        leading=18,
+        textColor=primary_color,
+        spaceBefore=10,
+        spaceAfter=4
+    )
+
+    # Simple layout parsing
     lines = text_content.split('\n')
     for line in lines:
-        if line.strip():
-            # Convert raw text into safe paragraph text blocks
-            clean_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            story.append(Paragraph(clean_line, ats_style))
-        else:
-            # Replicate empty line breaks gracefully
+        cleaned_line = line.strip()
+        if not cleaned_line:
             story.append(Spacer(1, 8))
+            continue
+            
+        # Treat completely capitalized lines as section headers
+        if cleaned_line.isupper() and len(cleaned_line) < 40:
+            story.append(Paragraph(cleaned_line, custom_header))
+        else:
+            story.append(Paragraph(cleaned_line, custom_body))
             
     doc.build(story)
-    pdf_buffer.seek(0)
-    return pdf_buffer.getvalue()
-
+    buffer.seek(0)
+    return buffer.getvalue()
 
 # Configure page layout
 st.set_page_config(page_title="AI Resume Tailor", page_icon="💼", layout="centered")
@@ -301,7 +319,8 @@ elif st.session_state.current_page == "home":
 
     st.markdown("---")
 
-    if st.button("🚀 Run Live AI Analysis", type="primary"):
+    # --- SINGLE BUTTON TRIGGER ---
+    if st.button("🚀 Run Live AI Analysis", type="primary", use_container_width=True):
         if not job_desc.strip():
             st.warning("Please paste a Job Description to compare against.")
         else:
@@ -322,36 +341,220 @@ elif st.session_state.current_page == "home":
             if not resume_content.strip():
                 st.error("Please provide structural parameters via either PDF upload or profile generation wizard.")
             else:
-                st.success("Inputs verified! Interface logic maps correctly. Ready for live API integration.")
-                
-                # --- VISUAL PANELS ---
-                st.header("2. AI Analysis & Optimized Outputs")
-                tab1, tab2, tab3 = st.tabs(["📊 ATS Score & Gaps", "📝 Optimized Resume", "✉️ Drafted Cover Letter"])
-                
-                with tab1:
-                    st.subheader("ATS Match Score & Keyword Analysis")
-                    st.metric(label="Estimated ATS Match Score", value="-- %", delta="Pending Live Call")
-                    st.info("Missing keywords and professional alignment details will stream here.")
-                    
-                with tab2:
-                    st.subheader("Editable Optimized Resume Draft")
-                    edited_resume = st.text_area("Your Optimized Resume Content", value="[Your AI-tailored resume draft will generate here word-by-word in real time...]", height=300)
-                    st.download_button(
-                        label="📥 Download Tailored Resume (.pdf)", 
-                        data=convert_text_to_pdf(edited_resume), 
-                        file_name="tailored_resume.pdf", 
-                        mime="application/pdf"
+                # Initialize Gemini Model
+                try:
+                    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                    model = genai.GenerativeModel(
+                        "gemini-2.5-flash",
+                        generation_config={"temperature": 0.0} 
                     )
+                except Exception as e:
+                    st.error(f"API Authentication failed: {e}")
+                    st.stop()
+
+                with st.spinner("Establishing live stream connection with Gemini Engine..."):
+                    # Dynamically inject today's exact date from your system
+                    import datetime
+                    current_date_str = datetime.date.today().strftime("%B %d, %Y")
+
+                    # --- REFINED MASTER PROMPT WITH REVENUE-GRADE RECRUITER LOGIC ---
+                    master_prompt = f"""
+                    You are an expert recruiter and strict ATS parser. Analyze the Resume against the Job Description.
+                    Perform your breakdown, optimize the resume, and generate a cover letter if requested.
                     
-                with tab3:
-                    st.subheader("Tailored Cover Letter Draft")
-                    if generate_cover_letter:
-                        edited_letter = st.text_area("Your Cover Letter Content", value="[Your personalized cover letter tailored specifically to this JD will generate here...]", height=250)
-                        st.download_button(
-                            label="📥 Download Cover Letter (.pdf)", 
-                            data=convert_text_to_pdf(edited_letter), 
-                            file_name="cover_letter.pdf", 
-                            mime="application/pdf"
-                        )
-                    else:
-                        st.warning("You did not toggle the Cover Letter generation option on the input panel.")
+                    CRITICAL KEYWORD BOUNDARY RULES (STRICT INTERSECTION ONLY):
+                    You must perform a strict mathematical intersection comparison between the Job Description (JD) and the Original Resume.
+                    
+                    - [FOUND_KEYWORDS] MUST ONLY contain keywords, technical skills, or frameworks that are explicitly present in BOTH the Job Description AND the Original Resume text. If a word is in the resume but NOT requested in the JD, do NOT include it here.
+                    
+                    - [MISSING_KEYWORDS] MUST ONLY contain keywords, technical skills, or frameworks that are explicitly requested in the Job Description but are completely ABSENT from the Original Resume text.
+                    
+                    Do not hallucinate broad match definitions, synonyms, or general resume high points. If it is not explicitly mentioned in the JD, it has no business appearing in either keyword block.
+
+                    CRITICAL COVER LETTER DATE & HOOK RULE: 
+                    - You must use exactly "{current_date_str}" as the formal date of the letter. Do NOT write "[CURRENT DATE]" or leave brackets anywhere.
+                    - Do NOT output any generic bracketed placeholders like [Your Name], [Your Phone Number], [Company Name], or [Platform].
+                    - Extract the candidate's real name and contact details from the original resume. Extract the target company name and role title from the Job Description. 
+
+                    CRITICAL PLAIN-TEXT RULES: 
+                    The output must be strictly plain text. Do NOT use markdown bolding, do NOT use asterisks (*) anywhere. 
+                    Use ALL CAPS for section headings. Use simple dashes (-) for bullet points.
+
+                    Provide your entire response parsed strictly inside the matching text blocks below:
+
+                    [ATS_SCORE]
+                    (Provide only a number between 0 and 100 based strictly on hard skill text match)
+                    [/ATS_SCORE]
+
+                    [MATCH_SCORE]
+                    (Provide only a number between 0 and 100 based on role level alignment)
+                    [/MATCH_SCORE]
+
+                    [FOUND_KEYWORDS]
+                    (Provide a comma-separated list of ONLY terms present in BOTH the JD and the original resume text)
+                    [/FOUND_KEYWORDS]
+
+                    [MISSING_KEYWORDS]
+                    (Provide a comma-separated list of terms present in the JD but missing from the original resume text)
+                    [/MISSING_KEYWORDS]
+
+                    [GAPS]
+                    - (Bullet 1 of structural missing qualifications)
+                    - (Bullet 2)
+                    - (Bullet 3)
+                    [/GAPS]
+
+                    [TAILORED_RESUME]
+                    (Rewrite the full resume to integrate keywords authentically. No asterisks allowed.)
+                    [/TAILORED_RESUME]
+
+                    [COVER_LETTER]
+                    (Write the complete formal tailored cover letter using {current_date_str} as the header date. Ensure ALL placeholders are completely resolved with real text.)
+                    [/COVER_LETTER]
+
+                    JOB DESCRIPTION:
+                    {job_desc}
+
+                    ORIGINAL RESUME:
+                    {resume_content}
+                    """
+                    
+                    try:
+                        # Stream the contents safely
+                        response_stream = model.generate_content(master_prompt, stream=True)
+                        
+                        st.write("### 🎙️ Live AI Analysis Stream")
+                        stream_placeholder = st.empty()
+                        
+                        full_response_text = ""
+                        
+                        for chunk in response_stream:
+                            if chunk.text:
+                                full_response_text += chunk.text
+                                stream_placeholder.text(full_response_text)
+                        
+                        # 1. Parse basic metrics out first
+                        st.session_state.ats_score = full_response_text.split("[ATS_SCORE]")[1].split("[/ATS_SCORE]")[0].strip()
+                        st.session_state.match_score = full_response_text.split("[MATCH_SCORE]")[1].split("[/MATCH_SCORE]")[0].strip()
+                        st.session_state.missing_quals = full_response_text.split("[GAPS]")[1].split("[/GAPS]")[0].strip()
+                        st.session_state.final_resume = full_response_text.split("[TAILORED_RESUME]")[1].split("[/TAILORED_RESUME]")[0].strip()
+                        st.session_state.final_letter = full_response_text.split("[COVER_LETTER]")[1].split("[/COVER_LETTER]")[0].strip()
+                        
+                        # 2. Extract raw keywords identified by LLM from the JD
+                        raw_found = full_response_text.split("[FOUND_KEYWORDS]")[1].split("[/FOUND_KEYWORDS]")[0].strip()
+                        raw_missing = full_response_text.split("[MISSING_KEYWORDS]")[1].split("[/MISSING_KEYWORDS]")[0].strip()
+                        
+                        # Combine both lists to get every target keyword the JD is looking for
+                        all_jd_keywords = [k.strip() for k in f"{raw_found},{raw_missing}".split(",") if k.strip()]
+                        # Remove duplicates
+                        all_jd_keywords = list(set(all_jd_keywords))
+                        
+                        # 3. RUN DETERMINISTIC PYTHON FILTERING
+                        resume_lower = resume_content.lower()
+                        true_matched = []
+                        true_missing = []
+                        
+                        for keyword in all_jd_keywords:
+                            # Clean up phrasing for precise checking
+                            clean_keyword = keyword.strip()
+                            if not clean_keyword:
+                                continue
+                            
+                            # Check if the keyword exists verbatim in your resume text
+                            if clean_keyword.lower() in resume_lower:
+                                true_matched.append(clean_keyword)
+                            else:
+                                true_missing.append(clean_keyword)
+                        
+                        # 4. Save the true python-verified results to session state
+                        st.session_state.found_kw = ", ".join(true_matched)
+                        st.session_state.missing_kw = ", ".join(true_missing)
+                        
+                        st.session_state.ai_processed = True
+                        st.rerun()
+
+                    except IndexError:
+                        st.error("The model response structure wasn't fully generated. Please try running the tool again.")
+                    except Exception as e:
+                        if "429" in str(e) or "Quota exceeded" in str(e):
+                            st.error("🛑 Gemini API Free Tier Quota Exceeded! Please switch projects or update your API Key.")
+                        else:
+                            st.error(f"Processing Error: {e}")
+
+    # --- RENDER THE UI OUTSIDE OF THE BUTTON CLICK ---
+    if st.session_state.get("ai_processed", False):
+        st.success("✓ Optimization Complete! Results saved to memory.")
+        
+        tab1, tab2, tab3 = st.tabs(["📊 ATS Analysis", "📝 Optimized Resume", "✉️ Drafted Cover Letter"])
+
+        # TAB 1: Granular ATS & Match Score Breakdown
+        with tab1:
+            st.subheader("Alignment Evaluation Metrics")
+            score_col1, score_col2 = st.columns(2)
+            with score_col1:
+                st.metric(label="🎯 ATS Keyword Optimization Score", value=f"{st.session_state.ats_score}%")
+            with score_col2:
+                st.metric(label="👔 Holistic Role Match Rating", value=f"{st.session_state.match_score}%")
+                
+            st.markdown("---")
+            
+            # Key points shown cleanly as bullet layouts instead of comma blocks
+            kw_col1, kw_col2 = st.columns(2)
+            with kw_col1:
+                st.success("✅ Keywords Matched")
+                matched_items = [item.strip() for item in st.session_state.found_kw.split(",") if item.strip()]
+                if matched_items:
+                    for item in matched_items:
+                        st.markdown(f"• {item}")
+                else:
+                    st.write("No matching keywords identified.")
+                    
+            with kw_col2:
+                st.error("❌ Missing Keywords (Add these!)")
+                missing_items = [item.strip() for item in st.session_state.missing_kw.split(",") if item.strip()]
+                if missing_items:
+                    for item in missing_items:
+                        st.markdown(f"• {item}")
+                else:
+                    st.write("No missing keywords detected!")
+                
+            st.markdown("---")
+            st.warning("⚠️ Experience & Qualification Gaps")
+            st.write(st.session_state.missing_quals)
+
+        # TAB 2: Resume Download with Template Selection
+        with tab2:
+            st.subheader("Tailored Resume Panel")
+            st.text_area("Review Content (Plain Text Format)", st.session_state.final_resume, height=300)
+            
+            st.markdown("### 🎨 Select Document Export Layout")
+            resume_template = st.selectbox(
+                "Choose a layout template for your generated PDF:",
+                ["Classic Professional (Elegant Serif)", "Modern Minimalist (Clean Clean-cut Sans)", "Tech Executive (Bold Left-Border Accent)"]
+            )
+            
+            res_filename = st.text_input("Name your Resume PDF file:", value="Tailored_Resume.pdf")
+            
+            # Passing template selection style directly into the PDF compilation generator
+            st.download_button(
+                label="📥 Download Tailored Resume (.pdf)", 
+                data=convert_text_to_pdf(st.session_state.final_resume, template_style=resume_template), 
+                file_name=res_filename, 
+                mime="application/pdf"
+            )
+
+        # TAB 3: Cover Letter Download Panel
+        with tab3:
+            st.subheader("Tailored Cover Letter Panel")
+            if generate_cover_letter and "final_letter" in st.session_state:
+                st.text_area("Review Content (Plain Text Format)", st.session_state.final_letter, height=300)
+                
+                cl_filename = st.text_input("Name your Cover Letter PDF file:", value="Cover_Letter.pdf")
+                st.download_button(
+                    label="📥 Download Cover Letter (.pdf)", 
+                    data=convert_text_to_pdf(st.session_state.final_letter, template_style="Classic Professional (Elegant Serif)"), 
+                    file_name=cl_filename, 
+                    mime="application/pdf"
+                )
+            else:
+                st.info("Cover letter generation was not selected during initial execution parameter processing.")
