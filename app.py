@@ -357,59 +357,62 @@ elif st.session_state.current_page == "home":
                     import datetime
                     current_date_str = datetime.date.today().strftime("%B %d, %Y")
 
-                    # --- REFINED MASTER PROMPT WITH REVENUE-GRADE RECRUITER LOGIC ---
+                    # --- DYNAMIC MULTI-FACTOR MASTER PROMPT ---
                     master_prompt = f"""
                     You are an expert recruiter and strict ATS parser. Analyze the Resume against the Job Description.
-                    Perform your breakdown, optimize the resume, and generate a cover letter if requested.
-                    
-                    CRITICAL KEYWORD BOUNDARY RULES (STRICT INTERSECTION ONLY):
-                    You must perform a strict mathematical intersection comparison between the Job Description (JD) and the Original Resume.
-                    
-                    - [FOUND_KEYWORDS] MUST ONLY contain keywords, technical skills, or frameworks that are explicitly present in BOTH the Job Description AND the Original Resume text. If a word is in the resume but NOT requested in the JD, do NOT include it here.
-                    
-                    - [MISSING_KEYWORDS] MUST ONLY contain keywords, technical skills, or frameworks that are explicitly requested in the Job Description but are completely ABSENT from the Original Resume text.
-                    
-                    Do not hallucinate broad match definitions, synonyms, or general resume high points. If it is not explicitly mentioned in the JD, it has no business appearing in either keyword block.
+                    Perform your breakdown, optimize the resume, and generate a cover letter.
 
-                    CRITICAL COVER LETTER DATE & HOOK RULE: 
-                    - You must use exactly "{current_date_str}" as the formal date of the letter. Do NOT write "[CURRENT DATE]" or leave brackets anywhere.
-                    - Do NOT output any generic bracketed placeholders like [Your Name], [Your Phone Number], [Company Name], or [Platform].
-                    - Extract the candidate's real name and contact details from the original resume. Extract the target company name and role title from the Job Description. 
+                    CRITICAL ATS FRIENDLINESS RULE:
+                    Analyze the ORIGINAL RESUME text for structural compliance. Is it missing essential contact info? Does it use un-parsable characters or completely messy formatting layout rules? 
+                    Output exactly "YES" if it is cleanly scannable by a basic machine, or "NO" if it fails basic readability metrics.
+
+                    CRITICAL DYNAMIC WEIGHTING RULE:
+                    1. Read the JOB DESCRIPTION carefully. Does it explicitly mention an experience level requirement or a specific number of years/internship background? If yes, evaluate how well the candidate aligns and provide an [EXPERIENCE_SCORE] between 0 and 100. If NOT mentioned, write "NOT_SPECIFIED".
+                    2. Does the JD explicitly ask for specific educational degrees or fields (e.g., BCA, MCA, Computer Science)? If yes, evaluate alignment and provide an [EDUCATION_SCORE] between 0 and 100. If NOT mentioned, write "NOT_SPECIFIED".
+
+                    CRITICAL HARD-SKILL ONLY KEYWORD RULES:
+                    - Extract core technical tools, languages, and frameworks required by the JD.
+                    - STRICTLY FORBIDDEN keywords: Do NOT extract generic soft text like "hands on experience", "bachelor's degree", "work", "projects", "communication", etc.
+
+                    CRITICAL COVER LETTER DATE RULE: 
+                    - You must use exactly "{current_date_str}" as the formal date. Do NOT write "[CURRENT DATE]" or leave brackets anywhere.
+                    - Resolve all placeholders using real candidate details from the resume and target details from the JD.
 
                     CRITICAL PLAIN-TEXT RULES: 
-                    The output must be strictly plain text. Do NOT use markdown bolding, do NOT use asterisks (*) anywhere. 
-                    Use ALL CAPS for section headings. Use simple dashes (-) for bullet points.
+                    The output must be strictly plain text. Do NOT use markdown bolding, do NOT use asterisks (*) anywhere. Use ALL CAPS for section headings.
 
                     Provide your entire response parsed strictly inside the matching text blocks below:
 
-                    [ATS_SCORE]
-                    (Provide only a number between 0 and 100 based strictly on hard skill text match)
-                    [/ATS_SCORE]
+                    [ATS_FRIENDLY]
+                    (Write exactly YES or NO)
+                    [/ATS_FRIENDLY]
 
-                    [MATCH_SCORE]
-                    (Provide only a number between 0 and 100 based on role level alignment)
-                    [/MATCH_SCORE]
+                    [EXPERIENCE_SCORE]
+                    (Write a number 0-100 OR write NOT_SPECIFIED)
+                    [/EXPERIENCE_SCORE]
+
+                    [EDUCATION_SCORE]
+                    (Write a number 0-100 OR write NOT_SPECIFIED)
+                    [/EDUCATION_SCORE]
 
                     [FOUND_KEYWORDS]
-                    (Provide a comma-separated list of ONLY terms present in BOTH the JD and the original resume text)
+                    (Comma-separated list of technical skills present in BOTH the JD and the resume)
                     [/FOUND_KEYWORDS]
 
                     [MISSING_KEYWORDS]
-                    (Provide a comma-separated list of terms present in the JD but missing from the original resume text)
+                    (Comma-separated list of technical skills present in the JD but missing from the resume)
                     [/MISSING_KEYWORDS]
 
                     [GAPS]
-                    - (Bullet 1 of structural missing qualifications)
-                    - (Bullet 2)
-                    - (Bullet 3)
+                    - (Bullet points of missing qualifications)
                     [/GAPS]
 
                     [TAILORED_RESUME]
-                    (Rewrite the full resume to integrate keywords authentically. No asterisks allowed.)
+                    (Rewrite the full resume to integrate keywords cleanly)
                     [/TAILORED_RESUME]
 
                     [COVER_LETTER]
-                    (Write the complete formal tailored cover letter using {current_date_str} as the header date. Ensure ALL placeholders are completely resolved with real text.)
+                    (Write the complete formal tailored cover letter using {current_date_str})
                     [/COVER_LETTER]
 
                     JOB DESCRIPTION:
@@ -420,12 +423,27 @@ elif st.session_state.current_page == "home":
                     """
                     
                     try:
-                        # Stream the contents safely
-                        response_stream = model.generate_content(master_prompt, stream=True)
+                        # --- ROBUST RETRY LOOP FOR GOOGLE SERVER OVERLOADS ---
+                        import time
+                        from google.api_core.exceptions import ServiceUnavailable
+
+                        max_retries = 3
+                        response_stream = None
+                        
+                        for attempt in range(max_retries):
+                            try:
+                                # Stream the contents safely
+                                response_stream = model.generate_content(master_prompt, stream=True)
+                                break  # Success! Break out of the retry loop
+                            except ServiceUnavailable:
+                                if attempt < max_retries - 1:
+                                    st.warning(f"⚠️ Google AI servers are busy. Retrying automatically (Attempt {attempt + 2}/{max_retries})...")
+                                    time.sleep(2)  # Pause for 2 seconds before trying again
+                                else:
+                                    raise  # Re-raise the error if all 3 attempts fail
                         
                         st.write("### 🎙️ Live AI Analysis Stream")
                         stream_placeholder = st.empty()
-                        
                         full_response_text = ""
                         
                         for chunk in response_stream:
@@ -433,40 +451,61 @@ elif st.session_state.current_page == "home":
                                 full_response_text += chunk.text
                                 stream_placeholder.text(full_response_text)
                         
-                        # 1. Parse basic metrics out first
-                        st.session_state.ats_score = full_response_text.split("[ATS_SCORE]")[1].split("[/ATS_SCORE]")[0].strip()
-                        st.session_state.match_score = full_response_text.split("[MATCH_SCORE]")[1].split("[/MATCH_SCORE]")[0].strip()
+                        # 1. Parse base blocks
+                        st.session_state.ats_friendly = full_response_text.split("[ATS_FRIENDLY]")[1].split("[/ATS_FRIENDLY]")[0].strip().upper()
                         st.session_state.missing_quals = full_response_text.split("[GAPS]")[1].split("[/GAPS]")[0].strip()
                         st.session_state.final_resume = full_response_text.split("[TAILORED_RESUME]")[1].split("[/TAILORED_RESUME]")[0].strip()
                         st.session_state.final_letter = full_response_text.split("[COVER_LETTER]")[1].split("[/COVER_LETTER]")[0].strip()
                         
-                        # 2. Extract raw keywords identified by LLM from the JD
+                        # 2. Hard Keyword Parsing & Python Intersection Filter Check
                         raw_found = full_response_text.split("[FOUND_KEYWORDS]")[1].split("[/FOUND_KEYWORDS]")[0].strip()
                         raw_missing = full_response_text.split("[MISSING_KEYWORDS]")[1].split("[/MISSING_KEYWORDS]")[0].strip()
+                        all_jd_keywords = list(set([k.strip() for k in f"{raw_found},{raw_missing}".split(",") if k.strip()]))
                         
-                        # Combine both lists to get every target keyword the JD is looking for
-                        all_jd_keywords = [k.strip() for k in f"{raw_found},{raw_missing}".split(",") if k.strip()]
-                        # Remove duplicates
-                        all_jd_keywords = list(set(all_jd_keywords))
-                        
-                        # 3. RUN DETERMINISTIC PYTHON FILTERING
                         resume_lower = resume_content.lower()
-                        true_matched = []
-                        true_missing = []
+                        true_matched = [k.strip() for k in all_jd_keywords if k.strip().lower() in resume_lower]
+                        true_missing = [k.strip() for k in all_jd_keywords if k.strip().lower() not in resume_lower]
                         
-                        for keyword in all_jd_keywords:
-                            # Clean up phrasing for precise checking
-                            clean_keyword = keyword.strip()
-                            if not clean_keyword:
-                                continue
+                        # Calculate raw technical keyword percentage
+                        total_kw = len(true_matched) + len(true_missing)
+                        kw_score = int((len(true_matched) / total_kw) * 100) if total_kw > 0 else 70
+                        
+                        # 3. Read sub-scores to see what the company actually requested
+                        exp_raw = full_response_text.split("[EXPERIENCE_SCORE]")[1].split("[/EXPERIENCE_SCORE]")[0].strip()
+                        edu_raw = full_response_text.split("[EDUCATION_SCORE]")[1].split("[/EDUCATION_SCORE]")[0].strip()
+                        
+                        # DYNAMIC WEIGHT ALLOCATION ENGINE
+                        factors = {"keywords": kw_score}
+                        
+                        # Clean and extract numbers using safe list comprehensions
+                        if exp_raw != "NOT_SPECIFIED":
+                            exp_digits = "".join([char for char in exp_raw if char.isdigit()])
+                            if exp_digits:
+                                factors["experience"] = int(exp_digits)
                             
-                            # Check if the keyword exists verbatim in your resume text
-                            if clean_keyword.lower() in resume_lower:
-                                true_matched.append(clean_keyword)
-                            else:
-                                true_missing.append(clean_keyword)
+                        if edu_raw != "NOT_SPECIFIED":
+                            edu_digits = "".join([char for char in edu_raw if char.isdigit()])
+                            if edu_digits:
+                                factors["education"] = int(edu_digits)
                         
-                        # 4. Save the true python-verified results to session state
+                        # Calculate weighted math depending on active factors
+                        num_factors = len(factors)
+                        if num_factors == 3:
+                            # Keywords (40%), Experience (40%), Education (20%)
+                            final_score = int((factors["keywords"] * 0.4) + (factors["experience"] * 0.4) + (factors["education"] * 0.2))
+                        elif num_factors == 2:
+                            if "experience" in factors:
+                                # Keywords (50%), Experience (50%)
+                                final_score = int((factors["keywords"] * 0.5) + (factors["experience"] * 0.5))
+                            else:
+                                # Keywords (70%), Education (30%)
+                                final_score = int((factors["keywords"] * 0.7) + (factors["education"] * 0.3))
+                        else:
+                            # Keywords only (100%)
+                            final_score = factors["keywords"]
+
+                        # Save values safely to memory states
+                        st.session_state.resume_match_score = final_score
                         st.session_state.found_kw = ", ".join(true_matched)
                         st.session_state.missing_kw = ", ".join(true_missing)
                         
@@ -488,39 +527,93 @@ elif st.session_state.current_page == "home":
         tab1, tab2, tab3 = st.tabs(["📊 ATS Analysis", "📝 Optimized Resume", "✉️ Drafted Cover Letter"])
 
         # TAB 1: Granular ATS & Match Score Breakdown
+        # TAB 1: Cleaned Single Metric Breakdown
+        # TAB 1: Cleaned Single Metric Breakdown (Fixed Duplication Bug)
+        # TAB 1: Streamlined Score & Scan Check Breakdown
         with tab1:
             st.subheader("Alignment Evaluation Metrics")
-            score_col1, score_col2 = st.columns(2)
-            with score_col1:
-                st.metric(label="🎯 ATS Keyword Optimization Score", value=f"{st.session_state.ats_score}%")
-            with score_col2:
-                st.metric(label="👔 Holistic Role Match Rating", value=f"{st.session_state.match_score}%")
+            
+            # Place metrics cleanly side-by-side
+            m_col1, m_col2 = st.columns(2)
+            with m_col1:
+                st.metric(
+                    label="🎯 Unified Resume Match Score", 
+                    value=f"{st.session_state.resume_match_score}%",
+                    help="Calculated dynamically based ONLY on the criteria explicitly stated by the company inside the Job Description."
+                )
+            with m_col2:
+                # Colorful status indicator text format depending on response token
+                is_friendly = st.session_state.get("ats_friendly", "YES")
+                if "YES" in is_friendly:
+                    st.metric(label="📄 ATS Parsing Scannable Status", value="✅ YES (Pass)")
+                else:
+                    st.metric(label="📄 ATS Parsing Scannable Status", value="🛑 NO (Structure Error)")
                 
             st.markdown("---")
             
-            # Key points shown cleanly as bullet layouts instead of comma blocks
             kw_col1, kw_col2 = st.columns(2)
             with kw_col1:
                 st.success("✅ Keywords Matched")
                 matched_items = [item.strip() for item in st.session_state.found_kw.split(",") if item.strip()]
                 if matched_items:
-                    for item in matched_items:
-                        st.markdown(f"• {item}")
+                    for item in matched_items: st.markdown(f"• {item}")
                 else:
-                    st.write("No matching keywords identified.")
+                    st.write("No matching technical keys identified.")
                     
             with kw_col2:
                 st.error("❌ Missing Keywords (Add these!)")
-                missing_items = [item.strip() for item in st.session_state.missing_kw.split(",") if item.strip()]
-                if missing_items:
-                    for item in missing_items:
-                        st.markdown(f"• {item}")
-                else:
-                    st.write("No missing keywords detected!")
                 
-            st.markdown("---")
-            st.warning("⚠️ Experience & Qualification Gaps")
-            st.write(st.session_state.missing_quals)
+                # Parse out missing keywords into a clean Python list
+                missing_items = [item.strip() for item in st.session_state.missing_kw.split(",") if item.strip()]
+                
+                if missing_items:
+                    st.markdown("##### Click to select the keywords you want to add:")
+                    
+                    # 1. Use a dictionary to track which keyword buttons are selected
+                    selected_keywords = []
+                    
+                    # Display them nicely as individual selection checkboxes
+                    for item in missing_items:
+                        # This creates an individual selection item for every keyword
+                        if st.checkbox(f"➕ {item}", key=f"chk_{item}"):
+                            selected_keywords.append(item)
+                    
+                    st.markdown("---")
+                    
+                    # 2. Add the dynamic injection button below your selections
+                    if st.button("🚀 Add Selected Keywords to Resume", type="primary", use_container_width=True):
+                        if not selected_keywords:
+                            st.warning("Please check at least one keyword button above first.")
+                        else:
+                            # Pull the current tailored resume text from session state
+                            current_resume = st.session_state.final_resume
+                            
+                            # Build a clean plain-text skills append block
+                            skills_to_add = ", ".join(selected_keywords)
+                            injection_block = f"\n\nADDITIONAL TECHNICAL SKILLS:\n- {skills_to_add}\n"
+                            
+                            # Append it instantly to the optimized file copy in memory
+                            st.session_state.final_resume = current_resume + injection_block
+                            
+                            # 3. Dynamic Re-evaluation Math: Move selected items from Missing to Matched instantly
+                            updated_matched = [i.strip() for i in st.session_state.found_kw.split(",") if i.strip()]
+                            updated_matched.extend(selected_keywords)
+                            
+                            updated_missing = [i for i in missing_items if i not in selected_keywords]
+                            
+                            # Recalculate your dynamic percentage right on the fly
+                            total_kw = len(updated_matched) + len(updated_missing)
+                            if total_kw > 0:
+                                st.session_state.resume_match_score = int((len(updated_matched) / total_kw) * 100)
+                            
+                            # Save the freshly balanced collections back to session state variables
+                            st.session_state.found_kw = ", ".join(updated_matched)
+                            st.session_state.missing_kw = ", ".join(updated_missing)
+                            
+                            st.success(f"Successfully injected [{skills_to_add}] into your Optimized Resume! Your Match Score has updated.")
+                            st.rerun()
+                else:
+                    st.write("Your tech stack perfectly overlaps with the target JD!")
 
         # TAB 2: Resume Download with Template Selection
         with tab2:
