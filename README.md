@@ -14,3 +14,17 @@ An intelligent web application engineered to analyze target Job Descriptions, id
 ```bash
    git clone https://github.com/LeoJoychan/ai-resume-tailor.git
    cd ai-resume-tailor
+```
+2. **Install core dependencies:**
+```bash
+    pip install streamlit pypdf pdfplumber reportlab google-generativeai
+```
+3. **Configure Local Secrets:**
+```bash
+    Create a directory and file at .streamlit/secrets.toml and add your API key:
+    GEMINI_API_KEY = "your_actual_gemini_api_key_here"
+```
+4. **Launch the application workspace:**
+```bash
+    streamlit run app.py
+```
