@@ -1,4 +1,4 @@
-# 💼 AI-Powered ATS Resume Tailor & Optimization Engine
+# 💼 AI-Powered ATS Resume Tailor & Cover Letter Generator
 
 An intelligent web application engineered to analyze target Job Descriptions, identify technical skill gaps, and dynamically tailor professional resumes and cover letters to pass automated Applicant Tracking Systems (ATS).
 
